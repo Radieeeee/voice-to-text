@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>声を文字に</title>
+<style>
+  :root { --bg:#f6f7f9; --fg:#1c2330; --sub:#6b7688; --card:#fff; --acc:#2456d6; --rec:#d62a3c; --line:#dde2ea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12161d; --fg:#e8ecf3; --sub:#8b96a8; --card:#1a212c; --acc:#6b93ff; --rec:#ff5a6b; --line:#2b3442; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: system-ui, "Noto Sans JP", sans-serif;
+         display: flex; flex-direction: column; padding: 16px; gap: 12px; max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.1rem; margin: 0; }
+  #status { color: var(--sub); font-size: .9rem; min-height: 1.4em; }
+  #out { flex: 1; min-height: 40vh; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+         padding: 14px; font-size: 1.15rem; line-height: 1.7; overflow-y: auto; white-space: pre-wrap; }
+  #interim { color: var(--sub); }
+  .row { display: flex; gap: 8px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg);
+           border-radius: 10px; padding: 12px 14px; }
+  button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  #mic { flex: 1; background: var(--acc); color: #fff; border: 0; font-size: 1.1rem; padding: 16px; }
+  #mic.on { background: var(--rec); }
+  #mic.on::before { content: "● "; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { #mic.on::before { animation: none; } }
+  select { font: inherit; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+</style>
+</head>
+<body>
+  <h1>声を文字に</h1>
+  <div class="row">
+    <select id="lang" aria-label="言語">
+      <option value="ja-JP">日本語</option>
+      <option value="en-US">English</option>
+    </select>
+  </div>
+  <div id="status">マイクボタンを押して話してください</div>
+  <div id="out"><span id="final"></span><span id="interim"></span></div>
+  <div class="row">
+    <button id="mic">話す</button>
+    <button id="copy">コピー</button>
+    <button id="clear">消去</button>
+  </div>
+
+<script>
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const $ = id => document.getElementById(id);
+const statusEl = $("status"), finalEl = $("final"), interimEl = $("interim"), mic = $("mic");
+
+if (!SR) {
+  statusEl.textContent = "このブラウザは音声認識に対応していません。AndroidのChromeで開いてください。";
+  mic.disabled = true;
+} else {
+  const rec = new SR();
+  rec.continuous = true;       // 話し続けても止まらない
+  rec.interimResults = true;   // 途中経過も表示
+  let listening = false;
+
+  rec.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalEl.textContent += t + "\n";
+      else interim += t;
+    }
+    interimEl.textContent = interim;
+    $("out").scrollTop = $("out").scrollHeight;
+  };
+
+  rec.onerror = (e) => {
+    const msg = {
+      "not-allowed": "マイクが許可されていません。ブラウザのサイト設定でマイクを許可してください。",
+      "no-speech": "音声が聞こえませんでした。",
+      "audio-capture": "マイクが見つかりません。",
+      "network": "ネットワークエラー。通信状態を確認してください。"
+    }[e.error] || "エラー: " + e.error;
+    statusEl.textContent = msg;
+    if (e.error === "not-allowed") listening = false;
+  };
+
+  // Androidでは一定時間で自動停止するので、停止ボタンを押すまで再開する
+  rec.onend = () => {
+    if (listening) { try { rec.start(); } catch (_) {} }
+    else { mic.classList.remove("on"); mic.textContent = "話す"; }
+  };
+
+  mic.onclick = () => {
+    if (listening) {
+      listening = false; rec.stop();
+      statusEl.textContent = "停止しました";
+    } else {
+      rec.lang = $("lang").value;
+      listening = true; rec.start();
+      mic.classList.add("on"); mic.textContent = "停止";
+      statusEl.textContent = "聞いています…";
+    }
+  };
+
+  $("copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(finalEl.textContent); statusEl.textContent = "コピーしました"; }
+    catch { statusEl.textContent = "コピーできませんでした。長押しで選択してください。"; }
+  };
+  $("clear").onclick = () => { finalEl.textContent = ""; interimEl.textContent = ""; };
+}
+</script>
+</body>
+</html>
